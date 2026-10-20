@@ -10,6 +10,25 @@
     var clear = /[?&]meaning=1(?:&|$)/.test(location.search);
     window.CLEAR_MODE = clear;
     if (clear) { document.documentElement.className = "clear-mode"; }
+
+    /* 两个模式是同一个文件的两个 URL（缓存键不同）。这里在加载完成后
+       悄悄把「另一模式」的文档拉进 HTTP 缓存，否则点开关时目标常常是冷的，
+       要重新下载 20 KB，看起来就像「跳转很慢」。 */
+    if (window.fetch) {
+      var warm = function(){
+        try {
+          var target = location.pathname + (clear ? "" : "?meaning=1");
+          if (target === location.pathname + location.search) { return; }
+          var p = fetch(target, { cache: "default" });
+          if (p && p.catch) { p.catch(function(){}); }
+        } catch (e) {}
+      };
+      if (document.readyState === "complete") {
+        setTimeout(warm, 800);
+      } else {
+        window.addEventListener("load", function(){ setTimeout(warm, 800); });
+      }
+    }
   })();
 </script>
 <style>
@@ -1024,7 +1043,7 @@
     toast("意义已开启。本页将重新载入，以便变得清楚。");
     setTimeout(function(){
       location.href = location.pathname + "?meaning=1";
-    }, 520);
+    }, 220);
   });
 
   /* ── 计时器 ── */
@@ -1805,7 +1824,7 @@
   if (sw) {
     sw.onclick = function(){
       toast("意义已关闭。页面将重新变得不明。");
-      setTimeout(function(){ location.href = location.pathname; }, 480);
+      setTimeout(function(){ location.href = location.pathname; }, 180);
     };
   }
 
