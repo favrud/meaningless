@@ -568,6 +568,7 @@
     border-bottom:1px solid #1f6f4a;
   }
   html.clear-mode header{ background:#fff; border-bottom:1px solid #e4e4e4; }
+  html.clear-mode footer{ border-top:1px solid #e4e4e4; }
   html.clear-mode h1{ font-family:inherit; font-weight:800; letter-spacing:0; }
   html.clear-mode h1 .blur{ color:#1f6f4a; }
   html.clear-mode .eyebrow{ color:#1f6f4a; }
@@ -594,6 +595,8 @@
   }
   html.clear-mode .stats{ border-radius:5px; }
   html.clear-mode .stat + .stat{ border-left:1px solid #e4e4e4; }
+  html.clear-mode .stat:nth-child(3),
+  html.clear-mode .stat:nth-child(4){ border-top:1px solid #e4e4e4; }
   html.clear-mode .card{ border-radius:5px; }
   html.clear-mode .progress-fill{ background:#1f6f4a; }
   html.clear-mode .timer-banner{ background:#f7faf8; color:#1b1b1b; }
@@ -625,7 +628,12 @@
   }
   html.clear-mode .arena .btn{ position:static; margin:0; }
   html.clear-mode #stamp{ border-color:#1f6f4a; color:#1f6f4a; background:rgba(255,255,255,.78); }
-  html.clear-mode #lease{ display:none !important; }
+  html.clear-mode #lease{ background:#1f6f4a; color:#fff; }
+  html.clear-mode #lease .btn{
+    background:#fff; color:#1f6f4a; border:1px solid #1f6f4a;
+    box-shadow:2px 2px 0 #14402b;
+  }
+  html.clear-mode #lease .btn:hover{ transform:none; background:#f2f8f4; }
 
   @media (max-width:720px){
     /* 不用 flex gap：老内核（X5 < Chromium 84）不支持，链接会挤在一起 */
@@ -794,7 +802,7 @@
         <p>请取号后就座。座位不存在，请站等。</p>
         <div class="queue">
           <div class="q-item">当前叫号<b id="q-now">A-000</b></div>
-          <div class="q-item">您的号码<b id="q-you">A-001</b></div>
+          <div class="q-item">您的号码<b id="q-you">A-007</b></div>
           <div class="q-item">预计等待<b id="q-wait">不明</b></div>
         </div>
         <button class="btn ghost" id="q-jump" style="padding:9px 16px; font-size:13px; align-self:flex-start;">请求插队</button>
@@ -856,7 +864,7 @@
   </div>
 </div>
 
-<div id="toast"></div>
+<div id="toast" aria-live="polite"></div>
 
 <script>
 (function(){
@@ -1113,10 +1121,17 @@
     return d;
   }
 
-  /* ── 来访档案编号 ── */
+  /* ── 来访档案编号 ──
+     持久化：同一访客每次到访都是同一份档案。「档案」不该每次刷新都换人。 */
   var vid = $("visitor-id");
   if (vid){
-    vid.textContent = "UNK-" + (1000 + Math.floor(Math.random() * 9000));
+    var savedId = null;
+    try { savedId = localStorage.getItem("ium-visitor-id"); } catch (e) {}
+    if (!savedId){
+      savedId = "UNK-" + (1000 + Math.floor(Math.random() * 9000));
+      try { localStorage.setItem("ium-visitor-id", savedId); } catch (e) {}
+    }
+    vid.textContent = savedId;
   }
 
   /* ── 红章 ── */
@@ -1383,9 +1398,11 @@
     ctx.fillStyle = "rgba(20,20,20,0.42)";
     ctx.font = "10px Consolas, monospace";
     ctx.textAlign = "left";
+    /* 刻度按数值映射放置：与曲线的 y = padT + ih*(0.5 - v/2) 同一坐标系 */
     var labels = ["0.87", "0.00", "-0.87", "-∞"];
-    for (gy = 0; gy < rows; gy++){
-      ctx.fillText(labels[gy], padL + iw + 6, padT + ih * (gy + 0.5) / rows + 3);
+    var labelVals = [0.87, 0, -0.87, -1];
+    for (gy = 0; gy < labels.length; gy++){
+      ctx.fillText(labels[gy], padL + iw + 6, padT + ih * (0.5 - labelVals[gy] / 2) + 3);
     }
 
     var n = vals.length;
@@ -1446,7 +1463,7 @@
     setTimeout(function(){
       var t = lease.getElementsByTagName("div")[0];
       if (t && t.className === "lease-text"){
-        t.textContent = "我们注意到您仍然在这里。这不改变任何条款，仅表示我们注意到了。";
+        t.innerHTML = "我们注意到您仍然<b>在这里</b>。这不改变任何条款，仅表示我们注意到了。";
       }
       showLease();
     }, 68000);
@@ -1699,7 +1716,48 @@
   if (f2) {
     f2.innerHTML = "本页共加载意义 1 个，消耗好奇心 0 份（可退还，但没人来退）。<br>" +
                    "本页所有内容均属实，且均无助于您。<br>" +
-                   "已知悉本页内容者，可正常离开。";
+                   '<span id="leave-portal" style="cursor:pointer; text-decoration:underline; text-decoration-style:wavy;">已知悉本页内容者，可正常离开。</span>';
+  }
+  /* 全站唯一的一处裂缝：离开是受理的，出口是没有的 */
+  var leave = $("leave-portal");
+  if (leave) {
+    leave.onclick = function(){
+      toast(rand([
+        "离开已受理。您还在这里。",
+        "离开流程已办结。出口未找到。",
+        "您已离开。这是本页的一面之词。"
+      ]));
+      stamp();
+    };
+  }
+
+  /* ── 协议条（镜像）：一切已默认同意 ── */
+  var lease = $("lease");
+  if (lease){
+    var leaseText = lease.querySelector(".lease-text");
+    if (leaseText) {
+      leaseText.innerHTML = "本站已<b>默认同意一切</b>。您无需操作，也无需知情。本页不使用 cookie，也不使用您。";
+    }
+    var leaseYes = $("lease-yes");
+    var leaseNo = $("lease-no");
+    if (leaseYes) {
+      leaseYes.textContent = "知道了（不必要）";
+      leaseYes.onclick = function(){
+        lease.classList.remove("show");
+        document.body.classList.remove("lease-on");
+        toast("已知情。知情不改变任何条款。");
+      };
+    }
+    if (leaseNo) { leaseNo.style.display = "none"; }
+    setTimeout(function(){
+      lease.classList.add("show");
+      document.body.classList.add("lease-on");
+    }, 1600);
+    setTimeout(function(){
+      if (leaseText) { leaseText.innerHTML = "我们注意到您仍然<b>知情</b>。这不改变任何条款。"; }
+      lease.classList.add("show");
+      document.body.classList.add("lease-on");
+    }, 68000);
   }
 
   var s1 = document.querySelector("#stamp .s1");
